@@ -1,12 +1,15 @@
 import mysql from 'mysql2/promise';
 
-const {
-  DB_HOST = 'localhost',
-  DB_USER = 'root',
-  DB_PASSWORD = '',
-  DB_NAME = 'zirhmute_Embassy',
-  DB_PORT = 3306,
-} = process.env;
+const env = process.env;
+const DB_HOST = env.DB_HOST || env.MYSQL_HOST || env.MYSQL_HOSTNAME || 'localhost';
+const DB_USER = env.DB_USER || env.MYSQL_USER || 'root';
+const DB_PASSWORD = env.DB_PASSWORD || env.MYSQL_PASSWORD || '';
+const DB_NAME = env.DB_NAME || env.MYSQL_DATABASE || 'zirhmute_embassy';
+const DB_PORT = Number(env.DB_PORT || env.MYSQL_PORT || 3306);
+
+if (env.NODE_ENV === 'production' && (DB_HOST === 'localhost' || DB_HOST === '127.0.0.1')) {
+  console.warn('DB_HOST is localhost in production; check your Dokploy environment variables.');
+}
 
 export const pool = mysql.createPool({
   host: DB_HOST,

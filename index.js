@@ -77,6 +77,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', service: 'embassy-backend' });
+});
+
 app.post('/api/contact', contactValidation, async (req, res) => {
   const { email, message } = req.body;
 
