@@ -50,7 +50,7 @@ PORT=4000
 ```
 
 ```
-FRONTEND_URL=https://usrcaembassy.org
+FRONTEND_URL=https://usrcaembassy-8n3wfn-eeeb70-72-62-164-26.traefik.me
 ```
 
 ```
@@ -107,7 +107,7 @@ DB_PASSWORD=Admin
 DB_NAME=zirhmute_embassy
 DB_PORT=3306
 PORT=4000
-FRONTEND_URL=https://usrcaembassy.org
+FRONTEND_URL=https://usrcaembassy-8n3wfn-eeeb70-72-62-164-26.traefik.me
 NODE_ENV=production
 JWT_SECRET=GENERATE_YOUR_OWN_SECRET_HERE
 JWT_EXPIRES_IN=7d
