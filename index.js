@@ -28,6 +28,10 @@ const submissionLogoPath = path.join(__dirname, '..', 'public', 'favicon.png');
 
 const app = express();
 
+// Trust proxy - required for rate limiting behind reverse proxy (Traefik)
+// This allows Express to trust X-Forwarded-For headers
+app.set('trust proxy', true);
+
 // Security middleware
 app.use(helmet());
 app.use(cors({
@@ -40,8 +44,10 @@ app.use(cookieParser());
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 300, // Increased to 300 requests per 15 minutes
   message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 if (process.env.NODE_ENV === 'production') {
   app.use('/api/', limiter);
@@ -50,15 +56,27 @@ if (process.env.NODE_ENV === 'production') {
 // Stricter rate limit for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5, // 5 attempts per 15 minutes
+  max: 100, // Increased to 100 attempts per 15 minutes for testing
   message: 'Too many login attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/login', authLimiter);
 app.use('/api/signup', authLimiter);
 
+// Lenient rate limit for visitor tracking (non-critical)
+const visitorLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 30, // Increased to 30 tracking requests per minute per IP
+  message: 'Too many tracking requests.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+});
+
 const PORT = process.env.PORT || 4000;
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const CONTACT_TO = process.env.CONTACT_TO || 'ouambo5r@yahoo.fr';
+const CONTACT_TO = process.env.CONTACT_TO || 'ouambor@yahoo.fr';
 const CONTACT_FROM = process.env.CONTACT_FROM || 'no-reply@usrcaembassy.org';
 
 if (SENDGRID_API_KEY) {
@@ -82,20 +100,67 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/contact', contactValidation, async (req, res) => {
-  const { email, message } = req.body;
+  const { email, message, subject } = req.body;
 
   if (!SENDGRID_API_KEY) {
     return res.status(500).json({ error: 'Email service not configured' });
   }
 
   try {
+    const emailSubject = subject || 'General Inquiry';
+
+    // Send email to embassy (ouambor@yahoo.fr)
     await sgMail.send({
       to: CONTACT_TO,
       from: CONTACT_FROM,
       replyTo: email,
-      subject: 'Contact form message',
-      text: `From: ${email}\n\n${message}`,
+      subject: `${emailSubject} - From: ${email}`,
+      text: `Contact Form Submission\n\nFrom: ${email}\nSubject: ${emailSubject}\n\nMessage:\n${message}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #0b3b7a;">Contact Form Submission</h2>
+          <p><strong>From:</strong> ${email}</p>
+          <p><strong>Subject:</strong> ${emailSubject}</p>
+          <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>Message:</strong></p>
+            <p style="white-space: pre-wrap;">${message}</p>
+          </div>
+          <p style="color: #666; font-size: 12px;">This message was sent from the embassy website contact form.</p>
+        </div>
+      `,
     });
+
+    // Send confirmation email to user
+    await sgMail.send({
+      to: email,
+      from: CONTACT_FROM,
+      subject: `Confirmation: Your message to CAR Embassy - ${emailSubject}`,
+      text: `Thank you for contacting the Central African Republic Embassy.\n\nWe have received your message and will respond as soon as possible. Most inquiries receive a response within one business day.\n\nYour message:\n${message}\n\nBest regards,\nCentral African Republic Embassy\n2704 Ontario Rd NW, Washington, DC\n(202) 483-7800`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(120deg, #0b3b7a 0%, #082347 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+            <h1 style="margin: 0; font-size: 24px;">Message Received</h1>
+          </div>
+          <div style="padding: 30px; background: white; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+            <p>Thank you for contacting the <strong>Central African Republic Embassy</strong>.</p>
+            <p>We have received your message and will respond as soon as possible. Most inquiries receive a response within one business day.</p>
+
+            <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #0b3b7a;">
+              <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;"><strong>Your Message:</strong></p>
+              <p style="white-space: pre-wrap; color: #333; margin: 0;">${message}</p>
+            </div>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 5px 0; color: #666;"><strong>Central African Republic Embassy</strong></p>
+              <p style="margin: 5px 0; color: #666;">2704 Ontario Rd NW, Washington, DC</p>
+              <p style="margin: 5px 0; color: #666;">Phone: (202) 483-7800</p>
+              <p style="margin: 5px 0; color: #666;">Email: ${CONTACT_TO}</p>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+
     res.json({ success: true });
   } catch (err) {
     console.error('SendGrid error:', err);
@@ -150,8 +215,8 @@ app.post('/api/login', loginValidation, async (req, res) => {
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // Check if user is admin (username contains 'admin')
-    const isAdmin = user.username.includes('admin');
+    // Check if user is admin - ONLY admin@usrcaembassy.org has admin access
+    const isAdmin = user.username.toLowerCase() === 'admin@usrcaembassy.org';
 
     // Generate JWT token
     const token = generateToken({
@@ -472,9 +537,11 @@ app.get('/api/visa-applications/:id/pdf', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Use tracking number if available, otherwise use application ID
+    const barcodeText = application.tracking_number || `APP-${application.id}`;
     const barcode = await bwipjs.toBuffer({
       bcid: 'code128',
-      text: String(application.id),
+      text: barcodeText,
       scale: 3,
       height: 10,
       includetext: true,
@@ -575,20 +642,22 @@ app.get('/api/visa-applications/:id/pdf', authMiddleware, async (req, res) => {
 app.post('/api/marriage-applications', authMiddleware, async (req, res) => {
   const { user } = req;
   const userName = user.username;
+  const userId = user.id;
 
   try {
     const formData = req.body;
     const [result] = await pool.query(
       `INSERT INTO marriage_applications (
-        user_name, spouse1_first_name, spouse1_last_name, spouse1_birth_date, spouse1_birth_place,
+        user_id, user_name, spouse1_first_name, spouse1_last_name, spouse1_birth_date, spouse1_birth_place,
         spouse1_nationality, spouse1_passport_number, spouse1_address, spouse1_phone, spouse1_email,
         spouse1_occupation, spouse1_father_name, spouse1_mother_name,
         spouse2_first_name, spouse2_last_name, spouse2_birth_date, spouse2_birth_place,
         spouse2_nationality, spouse2_passport_number, spouse2_address, spouse2_phone, spouse2_email,
         spouse2_occupation, spouse2_father_name, spouse2_mother_name,
         marriage_date, marriage_place, marriage_country, marriage_type, certificate_purpose
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        userId,
         userName.toLowerCase(),
         formData.spouse1_first_name, formData.spouse1_last_name, formData.spouse1_birth_date, formData.spouse1_birth_place,
         formData.spouse1_nationality, formData.spouse1_passport_number || null, formData.spouse1_address, formData.spouse1_phone, formData.spouse1_email,
@@ -653,9 +722,11 @@ app.get('/api/marriage-applications/:id/pdf', authMiddleware, async (req, res) =
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Use tracking number if available, otherwise use application ID
+    const barcodeText = application.tracking_number || `APP-${application.id}`;
     const barcode = await bwipjs.toBuffer({
       bcid: 'code128',
-      text: String(application.id),
+      text: barcodeText,
       scale: 3,
       height: 10,
       includetext: true,
@@ -899,9 +970,11 @@ app.get('/api/birth-certificate-applications/:id/pdf', authMiddleware, async (re
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Use tracking number if available, otherwise use application ID
+    const barcodeText = application.tracking_number || `APP-${application.id}`;
     const barcode = await bwipjs.toBuffer({
       bcid: 'code128',
-      text: String(application.id),
+      text: barcodeText,
       scale: 3,
       height: 10,
       includetext: true,
@@ -1162,9 +1235,11 @@ app.get('/api/travel-pass-applications/:id/pdf', authMiddleware, async (req, res
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Use tracking number if available, otherwise use application ID
+    const barcodeText = application.tracking_number || `APP-${application.id}`;
     const barcode = await bwipjs.toBuffer({
       bcid: 'code128',
-      text: String(application.id),
+      text: barcodeText,
       scale: 3,
       height: 10,
       includetext: true,
@@ -1415,9 +1490,9 @@ app.post('/api/chat/message', async (req, res) => {
   }
 
   try {
-    // Get conversation
+    // Get conversation with user details
     const [conversations] = await pool.query(
-      'SELECT id FROM chat_conversations WHERE session_id = ?',
+      'SELECT * FROM chat_conversations WHERE session_id = ?',
       [sessionId]
     );
 
@@ -1425,7 +1500,8 @@ app.post('/api/chat/message', async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    const conversationId = conversations[0].id;
+    const conversation = conversations[0];
+    const conversationId = conversation.id;
 
     // Save message
     await pool.query(
@@ -1438,6 +1514,80 @@ app.post('/api/chat/message', async (req, res) => {
       'UPDATE chat_conversations SET last_message_at = NOW() WHERE id = ?',
       [conversationId]
     );
+
+    // Send email notification to admin if message is from user
+    if (senderType === 'user' && SENDGRID_API_KEY) {
+      try {
+        // Get all messages for this conversation to build transcript
+        const [allMessages] = await pool.query(
+          'SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC',
+          [conversationId]
+        );
+
+        // Build transcript
+        let transcript = '';
+        allMessages.forEach(msg => {
+          const time = new Date(msg.created_at).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+          transcript += `[${time}] ${msg.sender_name} (${msg.sender_type}):\n${msg.message}\n\n`;
+        });
+
+        // Send email to admin
+        await sgMail.send({
+          to: CONTACT_TO,
+          from: CONTACT_FROM,
+          replyTo: conversation.user_email,
+          subject: `New Chat Message from ${conversation.user_name}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #0b2f63 0%, #1e40af 100%); color: white; padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">💬 New Chat Message</h1>
+              </div>
+
+              <div style="background: #f8fafc; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #0b2f63;">
+                  <h2 style="margin: 0 0 15px 0; color: #1e293b; font-size: 18px;">Customer Information</h2>
+                  <p style="margin: 5px 0; color: #475569;"><strong>Name:</strong> ${conversation.user_name}</p>
+                  <p style="margin: 5px 0; color: #475569;"><strong>Email:</strong> ${conversation.user_email}</p>
+                  <p style="margin: 5px 0; color: #475569;"><strong>Conversation ID:</strong> #${conversationId}</p>
+                </div>
+
+                <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                  <h2 style="margin: 0 0 15px 0; color: #1e293b; font-size: 18px;">Latest Message</h2>
+                  <div style="background: #eff6ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                    <p style="margin: 0; color: #1e293b; line-height: 1.6;">${message}</p>
+                  </div>
+                </div>
+
+                <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                  <h2 style="margin: 0 0 15px 0; color: #1e293b; font-size: 18px;">Full Conversation Transcript</h2>
+                  <div style="background: #f8fafc; padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 13px; color: #475569; white-space: pre-wrap; max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb;">${transcript}</div>
+                </div>
+
+                <div style="text-align: center; margin-top: 30px;">
+                  <a href="${process.env.FRONTEND_URL || 'https://kessetest.com'}/admin/messages"
+                     style="display: inline-block; background: #0b2f63; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                    Reply in Admin Panel
+                  </a>
+                </div>
+
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; color: #94a3b8; font-size: 12px;">
+                  <p style="margin: 5px 0;">Central African Republic Embassy</p>
+                  <p style="margin: 5px 0;">Chat Notification System</p>
+                </div>
+              </div>
+            </div>
+          `,
+        });
+      } catch (emailErr) {
+        console.error('Failed to send chat notification email:', emailErr);
+        // Don't fail the request if email fails
+      }
+    }
 
     res.json({ success: true });
   } catch (err) {
@@ -1914,6 +2064,420 @@ app.get('/api/admin/statistics', authMiddleware, adminMiddleware, async (req, re
   } catch (err) {
     console.error('Statistics error:', err);
     res.status(500).json({ error: 'Failed to fetch statistics' });
+  }
+});
+
+// ========================================
+// APPLICATION TRACKING ENDPOINT
+// ========================================
+
+app.get('/api/track/:trackingNumber', async (req, res) => {
+  const { trackingNumber } = req.params;
+
+  try {
+    // Search in all application tables for the tracking number
+    const [visaResults] = await pool.query(
+      `SELECT id, user_name, first_name, last_name, status, visa_type as type_detail, 'Visa' as type, created_at, updated_at
+       FROM visa_applications
+       WHERE tracking_number = ?`,
+      [trackingNumber]
+    );
+
+    const [marriageResults] = await pool.query(
+      `SELECT id, user_name, spouse1_first_name as first_name, spouse1_last_name as last_name, status, 'Marriage' as type_detail, 'Marriage Certificate' as type, created_at, updated_at
+       FROM marriage_applications
+       WHERE tracking_number = ?`,
+      [trackingNumber]
+    );
+
+    const [birthResults] = await pool.query(
+      `SELECT id, user_name, child_first_name as first_name, child_last_name as last_name, status, 'Birth' as type_detail, 'Birth Certificate' as type, created_at, updated_at
+       FROM birth_certificate_applications
+       WHERE tracking_number = ?`,
+      [trackingNumber]
+    );
+
+    const [travelResults] = await pool.query(
+      `SELECT id, user_name, first_name, last_name, status, 'Travel Pass' as type_detail, 'Travel Pass' as type, created_at, updated_at
+       FROM travel_pass_applications
+       WHERE tracking_number = ?`,
+      [trackingNumber]
+    );
+
+    // Combine all results
+    const allResults = [...visaResults, ...marriageResults, ...birthResults, ...travelResults];
+
+    if (allResults.length === 0) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    // Return the first match
+    const application = allResults[0];
+    res.json({
+      id: application.id,
+      type: application.type,
+      typeDetail: application.type_detail,
+      applicantName: `${application.first_name} ${application.last_name}`,
+      status: application.status,
+      createdAt: application.created_at,
+      updatedAt: application.updated_at,
+    });
+  } catch (err) {
+    console.error('Tracking error:', err);
+    res.status(500).json({ error: 'Failed to track application' });
+  }
+});
+
+// ========================================
+// PASSWORD RESET ENDPOINTS
+// ========================================
+
+// Request password reset
+app.post('/api/password-reset/request', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  try {
+    // Check if user exists
+    const [users] = await pool.query('SELECT id, username, firstname, lastname FROM login WHERE username = ?', [email.toLowerCase()]);
+
+    if (users.length === 0) {
+      // Don't reveal if email exists or not for security
+      return res.json({ success: true, message: 'If an account exists with this email, a password reset link has been sent.' });
+    }
+
+    const user = users[0];
+
+    // Generate reset token (valid for 1 hour)
+    const resetToken = generateToken({ id: user.id, username: user.username, type: 'password_reset' });
+
+    // Store reset token in database
+    await pool.query(
+      `INSERT INTO password_resets (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))
+       ON DUPLICATE KEY UPDATE token = ?, expires_at = DATE_ADD(NOW(), INTERVAL 1 HOUR)`,
+      [user.id, resetToken, resetToken]
+    );
+
+    // Send reset email
+    if (SENDGRID_API_KEY) {
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+
+      try {
+        await sgMail.send({
+          to: user.username,
+          from: CONTACT_FROM,
+          subject: 'Password Reset Request - CAR Embassy',
+          html: `
+            <h2>Password Reset Request</h2>
+            <p>Hello ${user.firstname} ${user.lastname},</p>
+            <p>We received a request to reset your password. Click the link below to reset your password:</p>
+            <p><a href="${resetLink}" style="background: #0b3b7a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Reset Password</a></p>
+            <p>This link will expire in 1 hour.</p>
+            <p>If you didn't request this, please ignore this email.</p>
+            <p>Best regards,<br>Central African Republic Embassy</p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error('Email send error:', emailErr);
+      }
+    }
+
+    res.json({ success: true, message: 'If an account exists with this email, a password reset link has been sent.' });
+  } catch (err) {
+    console.error('Password reset request error:', err);
+    res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+});
+
+// Reset password with token
+app.post('/api/password-reset/reset', async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: 'Token and new password are required' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+
+  try {
+    // Verify token
+    const decoded = verifyToken(token);
+    if (!decoded || decoded.type !== 'password_reset') {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    // Check if token exists in database and hasn't expired
+    const [resets] = await pool.query(
+      'SELECT * FROM password_resets WHERE user_id = ? AND token = ? AND expires_at > NOW()',
+      [decoded.id, token]
+    );
+
+    if (resets.length === 0) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    // Hash new password
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await pool.query('UPDATE login SET password = ? WHERE id = ?', [hash, decoded.id]);
+
+    // Delete used reset token
+    await pool.query('DELETE FROM password_resets WHERE user_id = ?', [decoded.id]);
+
+    res.json({ success: true, message: 'Password has been reset successfully' });
+  } catch (err) {
+    console.error('Password reset error:', err);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// ============================================================================
+// VISITOR TRACKING
+// ============================================================================
+
+// Helper function to parse user agent
+function parseUserAgent(userAgent) {
+  const ua = userAgent || '';
+
+  // Detect device type
+  let deviceType = 'Desktop';
+  if (/mobile|android|iphone|ipod|blackberry|iemobile|opera mini/i.test(ua)) {
+    deviceType = 'Mobile';
+  } else if (/tablet|ipad/i.test(ua)) {
+    deviceType = 'Tablet';
+  }
+
+  // Detect browser
+  let browser = 'Unknown';
+  if (ua.includes('Chrome') && !ua.includes('Edg')) browser = 'Chrome';
+  else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
+  else if (ua.includes('Firefox')) browser = 'Firefox';
+  else if (ua.includes('Edg')) browser = 'Edge';
+  else if (ua.includes('MSIE') || ua.includes('Trident')) browser = 'Internet Explorer';
+
+  // Detect OS
+  let os = 'Unknown';
+  if (ua.includes('Win')) os = 'Windows';
+  else if (ua.includes('Mac')) os = 'macOS';
+  else if (ua.includes('Linux')) os = 'Linux';
+  else if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('iOS') || ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+
+  return { deviceType, browser, os };
+}
+
+// Helper function to get IP address
+function getClientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+         req.headers['x-real-ip'] ||
+         req.connection.remoteAddress ||
+         req.socket.remoteAddress ||
+         'Unknown';
+}
+
+// Track visitor endpoint (called from frontend)
+app.post('/api/track-visitor', visitorLimiter, async (req, res) => {
+  try {
+    const ip = getClientIp(req);
+    const userAgent = req.headers['user-agent'] || '';
+    const { page_url, referrer, session_id } = req.body;
+
+    const { deviceType, browser, os } = parseUserAgent(userAgent);
+
+    // For IP geolocation, we'll use a free service (ipapi.co)
+    let country = null;
+    let city = null;
+    let region = null;
+
+    try {
+      // Only fetch geolocation for non-local IPs
+      if (ip && ip !== 'Unknown' && !ip.startsWith('127.') && !ip.startsWith('::1')) {
+        const geoResponse = await fetch(`https://ipapi.co/${ip}/json/`);
+        if (geoResponse.ok) {
+          const geoData = await geoResponse.json();
+          country = geoData.country_name || null;
+          city = geoData.city || null;
+          region = geoData.region || null;
+        }
+      }
+    } catch (geoError) {
+      console.error('Geolocation lookup failed:', geoError);
+      // Continue without geolocation data
+    }
+
+    await pool.query(
+      `INSERT INTO visitor_logs
+       (ip_address, country, city, region, user_agent, device_type, browser, os, page_url, referrer, session_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [ip, country, city, region, userAgent, deviceType, browser, os, page_url, referrer, session_id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Visitor tracking error:', err);
+    res.status(500).json({ error: 'Failed to track visitor' });
+  }
+});
+
+// Get visitor statistics (admin only)
+app.get('/api/admin/visitors/stats', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    // Total visitors
+    const [totalVisitors] = await pool.query('SELECT COUNT(*) as count FROM visitor_logs');
+
+    // Unique visitors (by IP)
+    const [uniqueVisitors] = await pool.query('SELECT COUNT(DISTINCT ip_address) as count FROM visitor_logs');
+
+    // Today's visitors
+    const [todayVisitors] = await pool.query(
+      'SELECT COUNT(*) as count FROM visitor_logs WHERE DATE(visited_at) = CURDATE()'
+    );
+
+    // Visitors by device type
+    const [deviceStats] = await pool.query(
+      `SELECT device_type, COUNT(*) as count
+       FROM visitor_logs
+       GROUP BY device_type
+       ORDER BY count DESC`
+    );
+
+    // Visitors by country (top 10)
+    const [countryStats] = await pool.query(
+      `SELECT country, COUNT(*) as count
+       FROM visitor_logs
+       WHERE country IS NOT NULL
+       GROUP BY country
+       ORDER BY count DESC
+       LIMIT 10`
+    );
+
+    // Visitors by browser
+    const [browserStats] = await pool.query(
+      `SELECT browser, COUNT(*) as count
+       FROM visitor_logs
+       GROUP BY browser
+       ORDER BY count DESC`
+    );
+
+    res.json({
+      total: totalVisitors[0].count,
+      unique: uniqueVisitors[0].count,
+      today: todayVisitors[0].count,
+      byDevice: deviceStats,
+      byCountry: countryStats,
+      byBrowser: browserStats,
+    });
+  } catch (err) {
+    console.error('Visitor stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch visitor statistics' });
+  }
+});
+
+// Get recent visitors (admin only)
+app.get('/api/admin/visitors/recent', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+
+    const [visitors] = await pool.query(
+      `SELECT * FROM visitor_logs
+       ORDER BY visited_at DESC
+       LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    const [total] = await pool.query('SELECT COUNT(*) as count FROM visitor_logs');
+
+    res.json({
+      visitors,
+      total: total[0].count,
+      limit,
+      offset,
+    });
+  } catch (err) {
+    console.error('Recent visitors error:', err);
+    res.status(500).json({ error: 'Failed to fetch recent visitors' });
+  }
+});
+
+// Heartbeat endpoint - updates last_active timestamp
+app.post('/api/visitor/heartbeat', async (req, res) => {
+  try {
+    const { session_id, page_url } = req.body;
+
+    if (!session_id) {
+      return res.status(400).json({ error: 'Session ID required' });
+    }
+
+    // Update the most recent visitor log for this session
+    await pool.query(
+      `UPDATE visitor_logs
+       SET last_active = CURRENT_TIMESTAMP, page_url = ?
+       WHERE session_id = ?
+       ORDER BY visited_at DESC
+       LIMIT 1`,
+      [page_url || null, session_id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Heartbeat error:', err);
+    res.status(500).json({ error: 'Failed to update heartbeat' });
+  }
+});
+
+// Get currently online visitors (admin only)
+// Considers visitors online if they've been active in the last 5 minutes
+app.get('/api/admin/visitors/online', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const [onlineVisitors] = await pool.query(
+      `SELECT
+        v.session_id,
+        v.ip_address,
+        v.country,
+        v.city,
+        v.region,
+        v.device_type,
+        v.browser,
+        v.os,
+        v.page_url,
+        v.last_active,
+        v.visited_at,
+        u.email as username,
+        u.full_name
+       FROM visitor_logs v
+       LEFT JOIN (
+         SELECT DISTINCT session_id, MAX(visited_at) as latest_visit
+         FROM visitor_logs
+         GROUP BY session_id
+       ) latest ON v.session_id = latest.session_id AND v.visited_at = latest.latest_visit
+       LEFT JOIN users u ON v.user_id = u.id
+       WHERE v.last_active >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+       GROUP BY v.session_id
+       ORDER BY v.last_active DESC`
+    );
+
+    // Get count of online visitors
+    const [count] = await pool.query(
+      `SELECT COUNT(DISTINCT session_id) as count
+       FROM visitor_logs
+       WHERE last_active >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)`
+    );
+
+    res.json({
+      visitors: onlineVisitors,
+      count: count[0].count,
+      threshold: '5 minutes'
+    });
+  } catch (err) {
+    console.error('Online visitors error:', err);
+    res.status(500).json({ error: 'Failed to fetch online visitors' });
   }
 });
 

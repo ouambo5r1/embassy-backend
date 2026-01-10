@@ -154,17 +154,25 @@ export const initDB = async () => {
       spouse1_birth_date DATE NOT NULL,
       spouse1_birth_place VARCHAR(150),
       spouse1_nationality VARCHAR(100) NOT NULL,
+      spouse1_passport_number VARCHAR(50),
       spouse1_address TEXT,
       spouse1_phone VARCHAR(50),
       spouse1_email VARCHAR(150),
+      spouse1_occupation VARCHAR(150),
+      spouse1_father_name VARCHAR(150),
+      spouse1_mother_name VARCHAR(150),
       spouse2_first_name VARCHAR(100) NOT NULL,
       spouse2_last_name VARCHAR(100) NOT NULL,
       spouse2_birth_date DATE NOT NULL,
       spouse2_birth_place VARCHAR(150),
       spouse2_nationality VARCHAR(100) NOT NULL,
+      spouse2_passport_number VARCHAR(50),
       spouse2_address TEXT,
       spouse2_phone VARCHAR(50),
       spouse2_email VARCHAR(150),
+      spouse2_occupation VARCHAR(150),
+      spouse2_father_name VARCHAR(150),
+      spouse2_mother_name VARCHAR(150),
       marriage_date DATE NOT NULL,
       marriage_place VARCHAR(150) NOT NULL,
       marriage_country VARCHAR(100) NOT NULL,
@@ -239,6 +247,46 @@ export const initDB = async () => {
       INDEX idx_user_name (user_name),
       INDEX idx_status (status),
       INDEX idx_tracking (tracking_number)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Password reset tokens table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id INT UNSIGNED NOT NULL,
+      token TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_user_id (user_id),
+      INDEX idx_token (token(255)),
+      INDEX idx_expires (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Visitor tracking table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS visitor_logs (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      ip_address VARCHAR(45) NOT NULL,
+      country VARCHAR(100),
+      city VARCHAR(100),
+      region VARCHAR(100),
+      user_agent TEXT,
+      device_type VARCHAR(50),
+      browser VARCHAR(50),
+      os VARCHAR(50),
+      page_url VARCHAR(500),
+      referrer VARCHAR(500),
+      session_id VARCHAR(100),
+      user_id INT UNSIGNED,
+      visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_ip (ip_address),
+      INDEX idx_visited (visited_at),
+      INDEX idx_session (session_id),
+      INDEX idx_last_active (last_active),
+      INDEX idx_user_id (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 };
