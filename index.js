@@ -2449,15 +2449,15 @@ app.get('/api/admin/visitors/online', authMiddleware, adminMiddleware, async (re
         v.page_url,
         v.last_active,
         v.visited_at,
-        u.email as username,
-        u.full_name
+        u.username as username,
+        CONCAT(u.firstname, ' ', u.lastname) as full_name
        FROM visitor_logs v
        LEFT JOIN (
          SELECT DISTINCT session_id, MAX(visited_at) as latest_visit
          FROM visitor_logs
          GROUP BY session_id
        ) latest ON v.session_id = latest.session_id AND v.visited_at = latest.latest_visit
-       LEFT JOIN users u ON v.user_id = u.id
+       LEFT JOIN login u ON v.user_id = u.id
        WHERE v.last_active >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
        GROUP BY v.session_id
        ORDER BY v.last_active DESC`
