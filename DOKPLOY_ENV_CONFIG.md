@@ -50,7 +50,7 @@ PORT=4000
 ```
 
 ```
-FRONTEND_URL=https://kessetest.com
+FRONTEND_URL=https://usrcaembassy.org
 ```
 
 ```
@@ -118,7 +118,7 @@ DB_PASSWORD=Admin
 DB_NAME=zirhmute_embassy
 DB_PORT=3306
 PORT=4000
-FRONTEND_URL=https://kessetest.com
+FRONTEND_URL=https://usrcaembassy.org
 NODE_ENV=production
 JWT_SECRET=GENERATE_YOUR_OWN_SECRET_HERE
 JWT_EXPIRES_IN=7d

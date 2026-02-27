@@ -63,7 +63,7 @@ Value: 4000
 
 ```
 Variable Name: FRONTEND_URL
-Value: https://kessetest.com
+Value: https://usrcaembassy.org
 ```
 
 ```
@@ -188,7 +188,7 @@ DB_PASSWORD=Admin
 DB_NAME=zirhmute_embassy
 DB_PORT=3306
 PORT=4000
-FRONTEND_URL=https://kessetest.com
+FRONTEND_URL=https://usrcaembassy.org
 NODE_ENV=production
 JWT_SECRET=GENERATE_AND_REPLACE_THIS_WITH_SECURE_RANDOM_STRING
 JWT_EXPIRES_IN=7d
@@ -246,7 +246,7 @@ Once the backend is running successfully:
 ---
 
 **Your Backend URL:** https://usrcaembassyorg-backend-lj9ktg-ae1efa-72-62-164-26.traefik.me/
-**Your Frontend URL:** https://kessetest.com/
+**Your Frontend URL:** https://usrcaembassy.org/
 **Database Host:** usrcaembassyorg-zirhmuteembassy-pvq7ig
 
 The environment variables listed above will allow your backend to connect to the database and accept requests from your frontend!

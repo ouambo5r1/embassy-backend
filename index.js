@@ -35,8 +35,6 @@ app.set('trust proxy', true);
 // Security middleware
 app.use(helmet());
 const allowedOrigins = [
-  'https://kessetest.com',
-  'https://www.kessetest.com',
   'https://usrcaembassy.org',
   'https://www.usrcaembassy.org',
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
@@ -1582,7 +1580,7 @@ app.post('/api/chat/message', async (req, res) => {
                 </div>
 
                 <div style="text-align: center; margin-top: 30px;">
-                  <a href="${process.env.FRONTEND_URL || 'https://kessetest.com'}/admin/messages"
+                  <a href="${process.env.FRONTEND_URL || 'https://usrcaembassy.org'}/admin/messages"
                      style="display: inline-block; background: #0b2f63; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
                     Reply in Admin Panel
                   </a>
