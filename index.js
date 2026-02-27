@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import PDFDocument from 'pdfkit';
 import bwipjs from 'bwip-js';
-import sgMail from '@sendgrid/mail';
+import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -67,14 +67,22 @@ app.use('/api/signup', authLimiter);
 // Visitor tracking removed - was causing rate limiting issues
 
 const PORT = process.env.PORT || 4000;
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const CONTACT_TO = process.env.CONTACT_TO || 'ouambor@yahoo.fr';
-const CONTACT_FROM = process.env.CONTACT_FROM || 'no-reply@usrcaembassy.org';
+const CONTACT_TO = process.env.CONTACT_TO || 'jovite@usrcaembassy.org';
+const CONTACT_FROM = process.env.CONTACT_FROM || 'info@mailkessedesk.com';
+const SMTP_CONFIGURED = !!process.env.SMTP_PASS;
 
-if (SENDGRID_API_KEY) {
-  sgMail.setApiKey(SENDGRID_API_KEY);
-} else {
-  console.warn('SENDGRID_API_KEY is not set; contact emails will fail.');
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+  port: parseInt(process.env.SMTP_PORT || '465'),
+  secure: true,
+  auth: {
+    user: process.env.SMTP_USER || 'info@mailkessedesk.com',
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+if (!SMTP_CONFIGURED) {
+  console.warn('SMTP_PASS is not set; contact emails will fail.');
 }
 
 // Initialize DB on start
@@ -94,7 +102,7 @@ app.get('/', (req, res) => {
 app.post('/api/contact', contactValidation, async (req, res) => {
   const { email, message, subject } = req.body;
 
-  if (!SENDGRID_API_KEY) {
+  if (!SMTP_CONFIGURED) {
     return res.status(500).json({ error: 'Email service not configured' });
   }
 
@@ -102,7 +110,7 @@ app.post('/api/contact', contactValidation, async (req, res) => {
     const emailSubject = subject || 'General Inquiry';
 
     // Send email to embassy (ouambor@yahoo.fr)
-    await sgMail.send({
+    await transporter.sendMail({
       to: CONTACT_TO,
       from: CONTACT_FROM,
       replyTo: email,
@@ -123,7 +131,7 @@ app.post('/api/contact', contactValidation, async (req, res) => {
     });
 
     // Send confirmation email to user
-    await sgMail.send({
+    await transporter.sendMail({
       to: email,
       from: CONTACT_FROM,
       subject: `Confirmation: Your message to CAR Embassy - ${emailSubject}`,
@@ -391,7 +399,7 @@ app.put('/api/visa-applications/:id/status', authMiddleware, adminMiddleware, as
     );
 
     // Send email notification
-    if (SENDGRID_API_KEY) {
+    if (SMTP_CONFIGURED) {
       const statusMessages = {
         pending: 'Your visa application is pending review.',
         under_review: 'Your visa application is now under review. We will notify you of any updates.',
@@ -401,7 +409,7 @@ app.put('/api/visa-applications/:id/status', authMiddleware, adminMiddleware, as
       };
 
       try {
-        await sgMail.send({
+        await transporter.sendMail({
           to: application.user_name,
           from: CONTACT_FROM,
           subject: `Visa Application Status Update - ${status.replace('_', ' ').toUpperCase()}`,
@@ -467,10 +475,10 @@ app.put('/api/visa-applications/:id/tracking', authMiddleware, adminMiddleware, 
     );
 
     // Send email notification
-    if (SENDGRID_API_KEY) {
+    if (SMTP_CONFIGURED) {
       try {
         const carrierName = carrier ? carrier.toUpperCase() : 'your carrier';
-        await sgMail.send({
+        await transporter.sendMail({
           to: application.user_name,
           from: CONTACT_FROM,
           subject: 'Tracking Number Available - Visa Application',
@@ -1508,7 +1516,7 @@ app.post('/api/chat/message', async (req, res) => {
     );
 
     // Send email notification to admin if message is from user
-    if (senderType === 'user' && SENDGRID_API_KEY) {
+    if (senderType === 'user' && SMTP_CONFIGURED) {
       try {
         // Get all messages for this conversation to build transcript
         const [allMessages] = await pool.query(
@@ -1529,7 +1537,7 @@ app.post('/api/chat/message', async (req, res) => {
         });
 
         // Send email to admin
-        await sgMail.send({
+        await transporter.sendMail({
           to: CONTACT_TO,
           from: CONTACT_FROM,
           replyTo: conversation.user_email,
@@ -2154,11 +2162,11 @@ app.post('/api/password-reset/request', async (req, res) => {
     );
 
     // Send reset email
-    if (SENDGRID_API_KEY) {
+    if (SMTP_CONFIGURED) {
       const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
       try {
-        await sgMail.send({
+        await transporter.sendMail({
           to: user.username,
           from: CONTACT_FROM,
           subject: 'Password Reset Request - CAR Embassy',
