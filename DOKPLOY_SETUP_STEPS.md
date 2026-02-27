@@ -92,20 +92,35 @@ Variable Name: JWT_EXPIRES_IN
 Value: 7d
 ```
 
-### Email Configuration (Optional - can add later)
+### Email Configuration (Hostinger SMTP)
 ```
-Variable Name: SENDGRID_API_KEY
-Value: your-sendgrid-api-key-here
+Variable Name: SMTP_HOST
+Value: smtp.hostinger.com
+```
+
+```
+Variable Name: SMTP_PORT
+Value: 465
+```
+
+```
+Variable Name: SMTP_USER
+Value: info@mailkessedesk.com
+```
+
+```
+Variable Name: SMTP_PASS
+Value: Sherley2016@
 ```
 
 ```
 Variable Name: CONTACT_TO
-Value: ouambo5r@yahoo.fr
+Value: jovite@usrcaembassy.org
 ```
 
 ```
 Variable Name: CONTACT_FROM
-Value: no-reply@usrcaembassy.org
+Value: info@mailkessedesk.com
 ```
 
 ---
@@ -177,9 +192,12 @@ FRONTEND_URL=https://kessetest.com
 NODE_ENV=production
 JWT_SECRET=GENERATE_AND_REPLACE_THIS_WITH_SECURE_RANDOM_STRING
 JWT_EXPIRES_IN=7d
-SENDGRID_API_KEY=your-sendgrid-api-key-here
-CONTACT_TO=ouambo5r@yahoo.fr
-CONTACT_FROM=no-reply@usrcaembassy.org
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=465
+SMTP_USER=info@mailkessedesk.com
+SMTP_PASS=Sherley2016@
+CONTACT_TO=jovite@usrcaembassy.org
+CONTACT_FROM=info@mailkessedesk.com
 ```
 
 **IMPORTANT:** Replace `JWT_SECRET` value with the output from:

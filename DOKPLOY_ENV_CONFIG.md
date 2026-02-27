@@ -79,19 +79,30 @@ JWT_SECRET=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
 JWT_EXPIRES_IN=7d
 ```
 
-#### 4. Email Configuration (Optional but Recommended)
+#### 4. Email Configuration (Hostinger SMTP)
 
 ```
-SENDGRID_API_KEY=<your-sendgrid-api-key>
-```
-*(Get this from your SendGrid account: https://app.sendgrid.com/settings/api_keys)*
-
-```
-CONTACT_TO=ouambo5r@yahoo.fr
+SMTP_HOST=smtp.hostinger.com
 ```
 
 ```
-CONTACT_FROM=no-reply@usrcaembassy.org
+SMTP_PORT=465
+```
+
+```
+SMTP_USER=info@mailkessedesk.com
+```
+
+```
+SMTP_PASS=Sherley2016@
+```
+
+```
+CONTACT_TO=jovite@usrcaembassy.org
+```
+
+```
+CONTACT_FROM=info@mailkessedesk.com
 ```
 
 ---
@@ -111,9 +122,12 @@ FRONTEND_URL=https://kessetest.com
 NODE_ENV=production
 JWT_SECRET=GENERATE_YOUR_OWN_SECRET_HERE
 JWT_EXPIRES_IN=7d
-SENDGRID_API_KEY=your-sendgrid-api-key-here
-CONTACT_TO=ouambo5r@yahoo.fr
-CONTACT_FROM=no-reply@usrcaembassy.org
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=465
+SMTP_USER=info@mailkessedesk.com
+SMTP_PASS=Sherley2016@
+CONTACT_TO=jovite@usrcaembassy.org
+CONTACT_FROM=info@mailkessedesk.com
 ```
 
 ---
