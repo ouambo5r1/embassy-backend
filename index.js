@@ -34,8 +34,21 @@ app.set('trust proxy', true);
 
 // Security middleware
 app.use(helmet());
+const allowedOrigins = [
+  'https://kessetest.com',
+  'https://www.kessetest.com',
+  'https://usrcaembassy.org',
+  'https://www.usrcaembassy.org',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+];
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://kessetest.com',
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    }
+  },
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
